@@ -1,1 +1,1 @@
-# CampusOS
+CampusOS — intelligent campus operating system.
