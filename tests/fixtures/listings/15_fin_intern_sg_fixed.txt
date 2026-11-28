@@ -1,0 +1,12 @@
+About Thamesbrook Partners
+Thamesbrook Partners builds reliable, human-centered software and analytical platforms used by teams across universities, financial institutions, and distributed engineering organizations. We value clear written communication, careful engineering, and measurable outcomes over buzzwords.
+
+Role Overview: Treasury Operations Intern
+As a Treasury Operations Intern at Thamesbrook Partners, you will collaborate with product engineers, data scientists, and operations leads to design, test, and ship production workflows. You will participate in weekly design reviews, write well-documented code and unit tests, monitor service reliability, and help improve internal developer tooling.
+
+Requirements & Qualifications
+Currently enrolled undergraduate; visa sponsorship available. Please apply by 2026-12-16.
+Core skills for this position include Excel, Python, Treasury. Candidates should be comfortable working with version control, structured data, and collaborative code reviews.
+
+How to Apply
+Submit your resume and a short note describing a recent technical or analytical project. We review applications carefully and communicate updates through our official careers portal.
