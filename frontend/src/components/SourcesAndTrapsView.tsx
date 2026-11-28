@@ -13,6 +13,7 @@ import { safeHttpUrl } from '../services/api';
 interface Props {
   sources: SourceFeed[];
   trapResults: TrapPackResult[];
+  trapPackNotRunYet?: boolean;
   isRunning: boolean;
   isKilled: boolean;
   onToggleSource: (id: string) => void;
@@ -30,6 +31,7 @@ interface Props {
 export const SourcesAndTrapsView: React.FC<Props> = ({
   sources,
   trapResults,
+  trapPackNotRunYet = false,
   isRunning,
   isKilled,
   onToggleSource,
@@ -260,6 +262,13 @@ export const SourcesAndTrapsView: React.FC<Props> = ({
           </button>
         </div>
 
+        {trapPackNotRunYet ? (
+          <div className="banner" style={{ marginBottom: 0 }}>
+            <strong>Trap Pack not run yet.</strong> Run{' '}
+            <code>python -m campusos trap-pack</code> on the backend to generate{' '}
+            <code>tests/trap_pack_results.json</code>.
+          </div>
+        ) : (
         <div style={{ overflowX: 'auto' }}>
           <table className="table">
             <thead>
@@ -297,6 +306,7 @@ export const SourcesAndTrapsView: React.FC<Props> = ({
             </tbody>
           </table>
         </div>
+        )}
       </div>
     </div>
   );

@@ -1,7 +1,7 @@
 export type EligibilityStatus = 'eligible' | 'needs_review' | 'expired';
 export type VerificationStatus = 'verified' | 'uncertain' | 'conflict';
 export type AgentRunState = 'idle' | 'running' | 'completed' | 'killed' | 'error';
-export type RunMode = 'mock' | 'replay' | 'live';
+export type RunMode = 'mock' | 'replay' | 'live' | 'trap_pack';
 export type OpportunityType = 'Internship' | 'Full-Time' | 'Research';
 export type WorkMode = 'Remote' | 'Hybrid' | 'On-site';
 export type RoleTrack =
@@ -98,6 +98,7 @@ export interface Opportunity {
   applied: boolean;
   dismissed?: boolean;
   isNew?: boolean;
+  alsoIn?: string[];
 }
 
 export interface SourceFeed {
@@ -200,4 +201,56 @@ export interface OpportunityFilters {
   verifiedOnly: boolean;
   savedOnly: boolean;
   closingSoonOnly: boolean;
+}
+
+export interface ApiErrorPayload {
+  error: 'not_found' | 'bad_request' | 'conflict' | 'internal' | string;
+  detail: string;
+}
+
+export interface ApiStatusResponse {
+  daemon: {
+    alive: boolean;
+    pid: number | null;
+    heartbeat_at: string | null;
+    next_run_at: string | null;
+    current_run_id: number | null;
+  };
+  kill_switch: boolean;
+  run_requested: boolean;
+  mode: RunMode;
+  latest_run: {
+    id: number;
+    state: 'running' | 'done' | 'stopped' | 'failed';
+    stage: AgentStage | null;
+    trigger: string;
+    started_at: string | null;
+    ended_at: string | null;
+    stop_reason: string | null;
+  } | null;
+  budget: {
+    used_requests: number;
+    used_tokens: number;
+    used_usd: number;
+    caps: {
+      requests: number;
+      tokens: number;
+      usd: number;
+      seconds: number;
+    };
+  };
+}
+
+export interface ApiTrapPackResponse {
+  generated_at?: string;
+  passed?: number;
+  total?: number;
+  cases?: Array<{
+    name: string;
+    type: string;
+    expected: string;
+    actual: string;
+    passed: boolean;
+  }>;
+  notRunYet?: boolean;
 }

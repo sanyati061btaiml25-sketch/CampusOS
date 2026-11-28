@@ -171,6 +171,34 @@ body {
   flex-wrap: wrap;
 }
 
+.mode-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 9px;
+  border-radius: 999px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-subtle);
+  color: var(--text-secondary);
+}
+
+.mode-badge.mock,
+.mode-badge.replay,
+.mode-badge.trap_pack {
+  background: #fffbeb;
+  border-color: #fde68a;
+  color: #b45309;
+}
+
+.mode-badge.live {
+  background: #ecfdf5;
+  border-color: #a7f3d0;
+  color: #047857;
+}
+
 .status-pill {
   display: inline-flex;
   align-items: center;

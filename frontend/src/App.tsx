@@ -26,8 +26,22 @@ import {
   applyOpportunityFilters,
   createEmptyFilters,
   DEFAULT_RUN_MODE,
+  getApiEvents,
+  getApiOpportunities,
+  getApiProfiles,
+  getApiSources,
+  getApiStatus,
+  getApiTrapPack,
+  IS_FASTAPI_MODE,
+  mapApiOpportunityToUi,
   nowIstString,
+  postImportJson,
+  postKillSwitch,
+  postReviewResolution,
+  postRunRequest,
+  putProfile,
   runMockAutonomousPipeline,
+  ApiClientError,
 } from './services/api';
 import { AuditTraceView } from './components/AuditTraceView';
 import { CompanyMark } from './components/CompanyMark';
@@ -56,15 +70,27 @@ const PIPELINE_STAGES: AgentStage[] = [
 
 export const App: React.FC = () => {
   const [profile, setProfile] = useState<StudentProfile>(DEFAULT_PROFILE);
-  const [sources, setSources] = useState<SourceFeed[]>(INITIAL_SOURCES);
-  const [opportunities, setOpportunities] = useState<Opportunity[]>(() =>
-    buildInitialOpportunities(DEFAULT_PROFILE)
+  const [profileId, setProfileId] = useState<number | string>(1);
+  const [sources, setSources] = useState<SourceFeed[]>(() =>
+    IS_FASTAPI_MODE ? [] : INITIAL_SOURCES
   );
-  const [auditEvents, setAuditEvents] = useState<AuditEvent[]>(INITIAL_AUDIT_EVENTS);
-  const [digests, setDigests] = useState<SandboxDigestMessage[]>(INITIAL_DIGESTS);
-  const [trapResults, setTrapResults] = useState<TrapPackResult[]>(INITIAL_TRAP_PACK_RESULTS);
+  const [opportunities, setOpportunities] = useState<Opportunity[]>(() =>
+    IS_FASTAPI_MODE ? [] : buildInitialOpportunities(DEFAULT_PROFILE)
+  );
+  const [auditEvents, setAuditEvents] = useState<AuditEvent[]>(() =>
+    IS_FASTAPI_MODE ? [] : INITIAL_AUDIT_EVENTS
+  );
+  const [digests, setDigests] = useState<SandboxDigestMessage[]>(() =>
+    IS_FASTAPI_MODE ? [] : INITIAL_DIGESTS
+  );
+  const [trapResults, setTrapResults] = useState<TrapPackResult[]>(() =>
+    IS_FASTAPI_MODE ? [] : INITIAL_TRAP_PACK_RESULTS
+  );
+  const [trapPackNotRunYet, setTrapPackNotRunYet] = useState(false);
+  const [apiError, setApiError] = useState<string | null>(null);
   const [filters, setFilters] = useState<OpportunityFilters>(createEmptyFilters());
   const [selectedId, setSelectedId] = useState<string | null>(() => {
+    if (IS_FASTAPI_MODE) return null;
     const initial = buildInitialOpportunities(DEFAULT_PROFILE);
     return initial[0]?.id ?? null;
   });
@@ -100,11 +126,162 @@ export const App: React.FC = () => {
   const killedRef = useRef(false);
   const telemetryRef = useRef(telemetry);
   telemetryRef.current = telemetry;
+  const lastEventSeqRef = useRef(0);
+
+  const loadFastApiData = async () => {
+    try {
+      const [statusRes, oppsRes, sourcesRes, trapRes, profilesRes] = await Promise.all([
+        getApiStatus(),
+        getApiOpportunities({ limit: 50, offset: 0 }),
+        getApiSources(),
+        getApiTrapPack(),
+        getApiProfiles(),
+      ]);
+
+      setApiError(null);
+      const latestRun = statusRes.latest_run;
+      const stageIdx = latestRun?.stage ? PIPELINE_STAGES.indexOf(latestRun.stage) : -1;
+      const mappedState: RunTelemetry['state'] = statusRes.kill_switch
+        ? 'killed'
+        : latestRun?.state === 'running'
+        ? 'running'
+        : latestRun?.state === 'done'
+        ? 'completed'
+        : latestRun?.state === 'stopped'
+        ? 'killed'
+        : latestRun?.state === 'failed'
+        ? 'error'
+        : 'idle';
+
+      setTelemetry((prev) => ({
+        ...prev,
+        runId: latestRun ? `run-${latestRun.id}` : prev.runId,
+        runMode: statusRes.mode || prev.runMode,
+        state: mappedState,
+        currentStage: latestRun?.stage ?? null,
+        progressPct:
+          mappedState === 'completed'
+            ? 100
+            : stageIdx >= 0
+            ? Math.round(((stageIdx + 1) / PIPELINE_STAGES.length) * 100)
+            : 0,
+        heartbeatAt: statusRes.daemon.heartbeat_at || nowIstString(),
+        requestsUsed: statusRes.budget.used_requests,
+        requestsLimit: statusRes.budget.caps.requests,
+        tokensUsed: statusRes.budget.used_tokens,
+        tokensLimit: statusRes.budget.caps.tokens,
+        estimatedCostUsd: statusRes.budget.used_usd,
+        costLimitUsd: statusRes.budget.caps.usd,
+        timeLimitSeconds: statusRes.budget.caps.seconds,
+        killSwitchDbFlag: statusRes.kill_switch,
+        killSwitchFileFlag: statusRes.kill_switch,
+      }));
+
+      const mappedOpps = oppsRes.items.map(mapApiOpportunityToUi);
+      setOpportunities(mappedOpps);
+      setSelectedId((cur) => cur ?? mappedOpps[0]?.id ?? null);
+
+      setSources(
+        sourcesRes.items.map((s) => ({
+          id: String(s.id),
+          name: s.name,
+          type: 'Official API',
+          url: '',
+          enabled: s.enabled,
+          intervalHours: Math.max(1, Math.round(s.interval_s / 3600)),
+          lastChecked: s.last_ok_at || s.last_snapshot?.fetched_at || 'Never',
+          contentHash: '',
+          circuitBreaker: s.breaker_state === 'open' ? 'open' : 'closed',
+          status: s.breaker_state === 'open' ? 'error' : 'healthy',
+          itemsFound: s.last_snapshot?.item_count ?? 0,
+          robotsAllowed: true,
+        }))
+      );
+
+      if (trapRes.notRunYet) {
+        setTrapPackNotRunYet(true);
+        setTrapResults([]);
+      } else if (trapRes.cases) {
+        setTrapPackNotRunYet(false);
+        setTrapResults(
+          trapRes.cases.map((c, idx) => ({
+            id: `trap-${idx}`,
+            name: c.name,
+            category: c.type as TrapPackResult['category'],
+            inputSummary: c.name,
+            expectedOutcome: c.expected,
+            actualOutcome: c.actual,
+            passed: c.passed,
+            checkedAt: trapRes.generated_at || nowIstString(),
+            lastRunAt: trapRes.generated_at || nowIstString(),
+          }))
+        );
+      }
+
+      const firstProf = profilesRes.items[0];
+      if (firstProf) {
+        if (firstProf.id != null) setProfileId(firstProf.id as number);
+        setProfile((prev) => ({
+          ...prev,
+          name: String(firstProf.label ?? prev.name),
+          degree: String(firstProf.education_level ?? prev.degree),
+          discipline: String(firstProf.education_field ?? prev.discipline),
+          graduationYear: Number(firstProf.graduation_year ?? prev.graduationYear),
+          skills: Array.isArray(firstProf.skills) ? (firstProf.skills as string[]) : prev.skills,
+          preferredLocations: Array.isArray(firstProf.preferred_locations)
+            ? (firstProf.preferred_locations as string[])
+            : prev.preferredLocations,
+        }));
+      }
+
+      const evtsRes = await getApiEvents({
+        run_id: latestRun?.id,
+        after_seq: lastEventSeqRef.current,
+        limit: 100,
+      });
+      if (evtsRes.items.length > 0) {
+        lastEventSeqRef.current = evtsRes.items[evtsRes.items.length - 1].seq;
+        const mappedEvts: AuditEvent[] = evtsRes.items.map((e) => ({
+          id: `evt-${e.seq}`,
+          runId: latestRun ? `run-${latestRun.id}` : 'run-0',
+          timestamp: e.ts,
+          stage: (e.stage as AuditEvent['stage']) || 'scheduler',
+          kind:
+            e.type === 'kill_switch'
+              ? 'kill_switch'
+              : e.error
+              ? 'error'
+              : e.type === 'decision'
+              ? 'decision'
+              : 'gateway_call',
+          toolName: e.tool ?? undefined,
+          summary: e.result_summary || e.input_summary || e.type,
+          detail: e.reason || e.error || '',
+        }));
+        setAuditEvents((prev) => [...mappedEvts.reverse(), ...prev]);
+      }
+    } catch (err) {
+      const msg =
+        err instanceof ApiClientError
+          ? `${err.code}: ${err.detail}`
+          : err instanceof Error
+          ? err.message
+          : 'Unable to reach FastAPI backend on http://localhost:8000';
+      setApiError(msg);
+    }
+  };
 
   useEffect(() => {
+    if (!IS_FASTAPI_MODE) {
+      const id = setInterval(() => {
+        setTelemetry((t) => ({ ...t, heartbeatAt: nowIstString() }));
+      }, 5000);
+      return () => clearInterval(id);
+    }
+    void loadFastApiData();
     const id = setInterval(() => {
-      setTelemetry((t) => ({ ...t, heartbeatAt: nowIstString() }));
-    }, 5000);
+      void loadFastApiData();
+    }, 1500);
     return () => clearInterval(id);
   }, []);
 
@@ -114,6 +291,16 @@ export const App: React.FC = () => {
 
   const handleStartRun = async () => {
     if (telemetry.state === 'running') return;
+    if (IS_FASTAPI_MODE) {
+      try {
+        setApiError(null);
+        await postRunRequest();
+        await loadFastApiData();
+      } catch (err) {
+        setApiError(err instanceof Error ? err.message : 'Failed to request run');
+      }
+      return;
+    }
     killedRef.current = false;
 
     await runMockAutonomousPipeline(profile, sources, opportunities, {
@@ -136,7 +323,17 @@ export const App: React.FC = () => {
     });
   };
 
-  const handleKillSwitch = () => {
+  const handleKillSwitch = async () => {
+    if (IS_FASTAPI_MODE) {
+      try {
+        setApiError(null);
+        await postKillSwitch(true);
+        await loadFastApiData();
+      } catch (err) {
+        setApiError(err instanceof Error ? err.message : 'Kill-switch request failed');
+      }
+      return;
+    }
     killedRef.current = true;
     setTelemetry((prev) => ({
       ...prev,
@@ -176,13 +373,29 @@ export const App: React.FC = () => {
     );
   };
 
-  const handleApproveReviewItem = (id: string) => {
+  const handleApproveReviewItem = async (id: string) => {
+    if (IS_FASTAPI_MODE) {
+      try {
+        await postReviewResolution(id, 'accepted');
+      } catch (err) {
+        setApiError(err instanceof Error ? err.message : 'Failed to accept review item');
+        return;
+      }
+    }
     setOpportunities((ops) =>
       ops.map((o) => (o.id === id ? { ...o, eligibilityStatus: 'eligible' } : o))
     );
   };
 
-  const handleDismissReviewItem = (id: string) => {
+  const handleDismissReviewItem = async (id: string) => {
+    if (IS_FASTAPI_MODE) {
+      try {
+        await postReviewResolution(id, 'rejected');
+      } catch (err) {
+        setApiError(err instanceof Error ? err.message : 'Failed to reject review item');
+        return;
+      }
+    }
     setOpportunities((ops) =>
       ops.map((o) => (o.id === id ? { ...o, dismissed: true } : o))
     );
@@ -205,7 +418,21 @@ export const App: React.FC = () => {
     URL.revokeObjectURL(url);
   };
 
-  const handleSaveProfile = (updated: StudentProfile) => {
+  const handleSaveProfile = async (updated: StudentProfile) => {
+    if (IS_FASTAPI_MODE) {
+      try {
+        await putProfile(profileId, {
+          education_level: updated.degree.toLowerCase().includes('master') ? 'master' : 'bachelor',
+          education_field: updated.discipline,
+          currently_enrolled: true,
+          graduation_year: updated.graduationYear,
+          skills: updated.skills,
+          preferred_locations: updated.preferredLocations,
+        });
+      } catch (err) {
+        setApiError(err instanceof Error ? err.message : 'Failed to update profile');
+      }
+    }
     setProfile(updated);
     setOpportunities((prev) =>
       prev.map((o) => {
@@ -216,6 +443,11 @@ export const App: React.FC = () => {
   };
 
   const handleImportJson = (jsonText: string) => {
+    if (IS_FASTAPI_MODE) {
+      void postImportJson(JSON.parse(jsonText)).catch((err) =>
+        setApiError(err instanceof Error ? err.message : 'Import failed')
+      );
+    }
     const result = importTeammateOpportunitiesJson(jsonText, profile, opportunities);
     setOpportunities((prev) => [...result.imported, ...prev]);
     return {
@@ -317,11 +549,22 @@ export const App: React.FC = () => {
         reviewCount={reviewCount}
         auditCount={auditEvents.length}
         telemetryState={telemetry.state}
+        runMode={telemetry.runMode}
         onStartRun={handleStartRun}
         onKillSwitch={handleKillSwitch}
         onOpenImport={() => setImportModalOpen(true)}
       />
       <div className="app-shell">
+        {apiError && (
+          <div className="banner banner-killed" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span>
+              <strong>Backend API notice:</strong> {apiError}
+            </span>
+            <button type="button" className="btn btn-ghost" style={{ height: 26 }} onClick={() => setApiError(null)}>
+              Dismiss
+            </button>
+          </div>
+        )}
         <div className="workspace-intro">
           <div>
             <h1 className="workspace-heading">
@@ -505,6 +748,7 @@ export const App: React.FC = () => {
           <SourcesAndTrapsView
             sources={sources}
             trapResults={trapResults}
+            trapPackNotRunYet={trapPackNotRunYet}
             isRunning={telemetry.state === 'running'}
             isKilled={telemetry.state === 'killed'}
             onToggleSource={handleToggleSource}

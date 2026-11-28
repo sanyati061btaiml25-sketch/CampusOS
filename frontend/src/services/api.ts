@@ -1,5 +1,8 @@
 import {
   AgentStage,
+  ApiErrorPayload,
+  ApiStatusResponse,
+  ApiTrapPackResponse,
   AuditEvent,
   Opportunity,
   OpportunityFilters,
@@ -12,10 +15,13 @@ import {
 import { evaluateOpportunityMatch } from '../engine/matcher';
 
 export const API_BASE_URL =
-  import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
+  import.meta.env.VITE_API_URL ||
+  import.meta.env.VITE_API_BASE_URL ||
+  'http://localhost:8000';
 
-export const DEFAULT_RUN_MODE: RunMode =
-  import.meta.env.VITE_API_MODE === 'fastapi' ? 'live' : 'mock';
+export const IS_FASTAPI_MODE = import.meta.env.VITE_API_MODE === 'fastapi';
+
+export const DEFAULT_RUN_MODE: RunMode = IS_FASTAPI_MODE ? 'live' : 'mock';
 
 /**
  * Prevents javascript:/data: URL XSS attacks from untrusted scraped links.
@@ -122,6 +128,19 @@ export function applyOpportunityFilters(
   });
 }
 
+export class ApiClientError extends Error {
+  status: number;
+  code: string;
+  detail: string;
+
+  constructor(status: number, payload: ApiErrorPayload) {
+    super(payload.detail || `API ${status}: ${payload.error}`);
+    this.status = status;
+    this.code = payload.error || 'internal';
+    this.detail = payload.detail || this.message;
+  }
+}
+
 export async function fetchFromBackend<T>(
   path: string,
   options?: RequestInit
@@ -131,9 +150,336 @@ export async function fetchFromBackend<T>(
     ...options,
   });
   if (!res.ok) {
-    throw new Error(`FastAPI ${res.status}: ${await res.text()}`);
+    const raw = await res.text();
+    try {
+      const parsed = JSON.parse(raw) as Partial<ApiErrorPayload>;
+      if (parsed && typeof parsed.error === 'string') {
+        throw new ApiClientError(res.status, {
+          error: parsed.error,
+          detail: typeof parsed.detail === 'string' ? parsed.detail : raw,
+        });
+      }
+    } catch (err) {
+      if (err instanceof ApiClientError) throw err;
+    }
+    throw new ApiClientError(res.status, {
+      error: res.status === 404 ? 'not_found' : res.status === 409 ? 'conflict' : 'internal',
+      detail: raw || `FastAPI ${res.status}`,
+    });
   }
   return res.json() as Promise<T>;
+}
+
+/* -------------------------------------------------------------------------
+ * CampusOS API Contract (v1) Endpoints
+ * ---------------------------------------------------------------------- */
+
+export interface ApiListResponse<T> {
+  items: T[];
+  total: number;
+}
+
+export interface ApiOpportunityItem {
+  id: number | string;
+  title: string;
+  company: string;
+  apply_url: string;
+  location_raw?: string | null;
+  location_norm?: string[];
+  countries?: string[];
+  remote_ok?: boolean;
+  remote_scope?: string;
+  seniority?: string;
+  employment_type?: string;
+  min_experience_yrs?: number | null;
+  grad_year_min?: number | null;
+  skills?: string[];
+  deadline?: string | null;
+  deadline_kind?: string;
+  deadline_evidence?: string | null;
+  posted_at?: string | null;
+  status?: 'pending' | 'verified' | 'needs_review' | 'expired';
+  confidence?: number;
+  flags?: string[];
+  first_seen_at?: string;
+  last_changed_at?: string | null;
+  also_in?: string[];
+  source?: { id: number; name: string; platform: string };
+  match?: {
+    eligibility: 'pass' | 'fail' | 'unknown';
+    eligibility_reasons: string[];
+    score: number | null;
+    score_breakdown: Record<string, number>;
+    score_reasons: string[];
+    decision: 'pending' | 'notify' | 'queue' | 'skip' | 'backed_off';
+    decision_reason: string | null;
+    ranked_position: number | null;
+  };
+  evidence?: Array<{ kind: string; snippet: string | null; source_url: string | null; recorded_at: string }>;
+}
+
+export interface ApiEventItem {
+  seq: number;
+  ts: string;
+  type: string;
+  stage: string | null;
+  tool: string | null;
+  input_summary: string | null;
+  result_summary: string | null;
+  decision: string | null;
+  reason: string | null;
+  error: string | null;
+  cost_usd: number;
+  tokens: number;
+  opportunity_id: number | null;
+}
+
+export interface ApiSourceItem {
+  id: number;
+  name: string;
+  platform: string;
+  enabled: boolean;
+  trust_tier: number;
+  breaker_state: 'closed' | 'open' | 'half_open';
+  breaker_failures: number;
+  last_ok_at: string | null;
+  interval_s: number;
+  last_snapshot?: {
+    status: string;
+    item_count: number | null;
+    fetched_at: string;
+    http_status: number | null;
+  } | null;
+}
+
+export interface ApiReviewQueueItem {
+  id: number;
+  reason: string;
+  detail: string | null;
+  created_at: string;
+  resolved_at: string | null;
+  resolution: 'accepted' | 'rejected' | 'ignored' | null;
+  opportunity?: ApiOpportunityItem;
+}
+
+export interface ApiActionItem {
+  id: number;
+  run_id: number;
+  type: 'digest' | 'ics';
+  target: string;
+  payload_ref: string | null;
+  status: string;
+  error: string | null;
+  opportunity_id: number | null;
+  profile_id: number | null;
+  created_at: string;
+  sent_at: string | null;
+}
+
+export function mapApiOpportunityToUi(item: ApiOpportunityItem): Opportunity {
+  const elig = item.match?.eligibility;
+  const eligibilityStatus: Opportunity['eligibilityStatus'] =
+    item.status === 'expired'
+      ? 'expired'
+      : elig === 'pass' && item.status === 'verified'
+      ? 'eligible'
+      : 'needs_review';
+
+  const verificationStatus: Opportunity['verificationStatus'] =
+    item.status === 'verified'
+      ? 'verified'
+      : (item.flags || []).includes('conflict_deadline')
+      ? 'conflict'
+      : 'uncertain';
+
+  const scorePct =
+    item.match?.score != null ? Math.round(item.match.score * 100) : Math.round((item.confidence ?? 0.5) * 100);
+
+  const city = item.location_norm?.[0] || item.location_raw || 'Remote';
+  const empType: Opportunity['opportunityType'] =
+    item.employment_type === 'full_time' ? 'Full-Time' : 'Internship';
+
+  return {
+    id: String(item.id),
+    canonicalKey: `${item.source?.name || 'source'}:${item.id}`,
+    title: item.title,
+    company: item.company,
+    companyTagline: `${item.source?.platform || 'official'} · ${city}`,
+    opportunityType: empType,
+    durationLabel: empType === 'Internship' ? 'Internship' : 'Full-Time',
+    location: item.location_raw || city,
+    cityTag: city,
+    workMode: item.remote_ok ? 'Remote' : 'On-site',
+    track: 'Software & Backend',
+    compensation: null,
+    monthlyStipendInr: null,
+    deadline: item.deadline || null,
+    minGraduationYear: item.grad_year_min ?? null,
+    minCgpa: null,
+    requiredDegrees: ['B.Tech'],
+    requiredSkills: item.skills || [],
+    responsibilities: item.evidence?.map((e) => e.snippet || '').filter(Boolean) || [],
+    eligibilityStatus,
+    verificationStatus,
+    scamFlags: item.flags || [],
+    sourceConfidence: item.confidence ?? 0.5,
+    evidence: {
+      sourceName: item.source?.name || 'Official Source',
+      sourceUrl: item.apply_url,
+      checkedAt: item.first_seen_at || '',
+      snippet: item.deadline_evidence || item.evidence?.[0]?.snippet || 'Verified via backend pipeline.',
+      mergedFrom: item.also_in,
+    },
+    score: {
+      skillScore: Math.round((item.match?.score_breakdown?.skills ?? 0.3) * 100),
+      degreeYearScore: 18,
+      locationScore: Math.round((item.match?.score_breakdown?.location ?? 0.12) * 100),
+      urgencyScore: 10,
+      confidenceScore: Math.round((item.confidence ?? 0.8) * 10),
+      total: scorePct,
+      matchedSkills: item.skills || [],
+      missingSkills: [],
+      reasons: item.match?.score_reasons || item.match?.eligibility_reasons || [],
+    },
+    checklist: [],
+    draftNote: item.match?.decision_reason || '',
+    bookmarked: false,
+    applied: false,
+    alsoIn: item.also_in,
+  };
+}
+
+export function getApiStatus() {
+  return fetchFromBackend<ApiStatusResponse>('/api/status');
+}
+
+export function getApiRuns(limit = 50, offset = 0) {
+  return fetchFromBackend<ApiListResponse<Record<string, unknown>>>(
+    `/api/runs?limit=${limit}&offset=${offset}`
+  );
+}
+
+export function getApiRunById(id: number | string) {
+  return fetchFromBackend<Record<string, unknown>>(`/api/runs/${id}`);
+}
+
+export function getApiOpportunities(params?: {
+  profile_id?: number;
+  status?: string;
+  seniority?: string;
+  decision?: string;
+  q?: string;
+  limit?: number;
+  offset?: number;
+}) {
+  const sp = new URLSearchParams();
+  if (params?.profile_id != null) sp.set('profile_id', String(params.profile_id));
+  if (params?.status) sp.set('status', params.status);
+  if (params?.seniority) sp.set('seniority', params.seniority);
+  if (params?.decision) sp.set('decision', params.decision);
+  if (params?.q) sp.set('q', params.q);
+  sp.set('limit', String(params?.limit ?? 50));
+  sp.set('offset', String(params?.offset ?? 0));
+  return fetchFromBackend<ApiListResponse<ApiOpportunityItem>>(`/api/opportunities?${sp.toString()}`);
+}
+
+export function getApiOpportunityById(id: number | string) {
+  return fetchFromBackend<ApiOpportunityItem>(`/api/opportunities/${id}`);
+}
+
+export function getApiEvents(params?: { run_id?: number; after_seq?: number; limit?: number }) {
+  const sp = new URLSearchParams();
+  if (params?.run_id != null) sp.set('run_id', String(params.run_id));
+  if (params?.after_seq != null) sp.set('after_seq', String(params.after_seq));
+  sp.set('limit', String(params?.limit ?? 100));
+  return fetchFromBackend<ApiListResponse<ApiEventItem>>(`/api/events?${sp.toString()}`);
+}
+
+export function getApiCoverage(runId?: number) {
+  const q = runId != null ? `?run_id=${runId}` : '';
+  return fetchFromBackend<Record<string, unknown>>(`/api/coverage${q}`);
+}
+
+export function getApiSources() {
+  return fetchFromBackend<ApiListResponse<ApiSourceItem>>('/api/sources');
+}
+
+export function getApiReviewQueue(resolved = false) {
+  return fetchFromBackend<ApiListResponse<ApiReviewQueueItem>>(
+    `/api/review-queue?resolved=${resolved}`
+  );
+}
+
+export function getApiActions(runId?: number) {
+  const q = runId != null ? `?run_id=${runId}` : '';
+  return fetchFromBackend<ApiListResponse<ApiActionItem>>(`/api/actions${q}`);
+}
+
+export function getActionFileUrl(actionId: number | string): string {
+  return `${API_BASE_URL}/api/actions/${actionId}/file`;
+}
+
+export function getApiProfiles() {
+  return fetchFromBackend<ApiListResponse<Record<string, unknown>>>('/api/profiles');
+}
+
+export function getApiProfileById(id: number | string) {
+  return fetchFromBackend<Record<string, unknown>>(`/api/profiles/${id}`);
+}
+
+export async function getApiTrapPack(): Promise<ApiTrapPackResponse> {
+  try {
+    return await fetchFromBackend<ApiTrapPackResponse>('/api/trap-pack');
+  } catch (err) {
+    if (err instanceof ApiClientError && err.status === 404) {
+      return { notRunYet: true };
+    }
+    throw err;
+  }
+}
+
+export function postKillSwitch(on: boolean) {
+  return fetchFromBackend<{ kill_switch: boolean }>('/api/kill-switch', {
+    method: 'POST',
+    body: JSON.stringify({ on }),
+  });
+}
+
+export function postRunRequest() {
+  return fetchFromBackend<{ requested: boolean }>('/api/runs/request', {
+    method: 'POST',
+  });
+}
+
+export function postReviewResolution(
+  id: number | string,
+  resolution: 'accepted' | 'rejected' | 'ignored'
+) {
+  return fetchFromBackend<Record<string, unknown>>(`/api/review/${id}`, {
+    method: 'POST',
+    body: JSON.stringify({ resolution }),
+  });
+}
+
+export function putProfile(id: number | string, payload: Record<string, unknown>) {
+  return fetchFromBackend<Record<string, unknown>>(`/api/profiles/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  });
+}
+
+export function putProfileSearchIntent(id: number | string, payload: Record<string, unknown>) {
+  return fetchFromBackend<Record<string, unknown>>(`/api/profiles/${id}/search-intent`, {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  });
+}
+
+export function postImportJson(payload: unknown) {
+  return fetchFromBackend<Record<string, unknown>>('/api/import', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
 }
 
 export function nowIstString(): string {

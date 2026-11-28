@@ -1,6 +1,6 @@
 import React from 'react';
 import { Play, Square, Upload } from 'lucide-react';
-import { AgentRunState } from '../types';
+import { AgentRunState, RunMode } from '../types';
 
 export type NavTab = 'opps' | 'inbox' | 'sources' | 'audit' | 'profile';
 
@@ -11,10 +11,18 @@ interface TopBarProps {
   reviewCount: number;
   auditCount: number;
   telemetryState: AgentRunState;
+  runMode: RunMode;
   onStartRun: () => void;
   onKillSwitch: () => void;
   onOpenImport: () => void;
 }
+
+const MODE_LABEL: Record<RunMode, string> = {
+  live: 'LIVE',
+  mock: 'MOCK',
+  replay: 'REPLAY',
+  trap_pack: 'TRAP PACK',
+};
 
 const STATE_LABEL: Record<AgentRunState, string> = {
   idle: 'Ready',
@@ -31,6 +39,7 @@ export const TopBar: React.FC<TopBarProps> = ({
   reviewCount,
   auditCount,
   telemetryState,
+  runMode,
   onStartRun,
   onKillSwitch,
   onOpenImport,
@@ -103,8 +112,14 @@ export const TopBar: React.FC<TopBarProps> = ({
           </button>
         </nav>
 
-        {/* Right: Status & Actions */}
+        {/* Right: Mode Badge, Status & Actions */}
         <div className="header-actions">
+          <span
+            className={`mode-badge ${runMode}`}
+            title={`Run mode: ${MODE_LABEL[runMode]}`}
+          >
+            {MODE_LABEL[runMode]}
+          </span>
           <div className={`status-pill ${telemetryState}`}>
             <span className="status-pill-dot" />
             <span>{STATE_LABEL[telemetryState]}</span>
