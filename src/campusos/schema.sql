@@ -394,7 +394,8 @@ INSERT OR IGNORE INTO settings (key, value) VALUES
     ('max_description_chars', '4000'),    -- applied after HTML is stripped, before LLM extraction
     ('daemon_stale_after_s',  '30'),
     ('sandbox_inbox',         ''),        -- set before the first real run
-    ('schema_version',        '2');
+    ('schema_version',        '2'),
+    ('run_requested',         'false');
 
 -- =============================================================================
 -- SEED SOURCES: tested live on Nov 27 (all 200 OK). Final set.

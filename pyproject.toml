@@ -1,19 +1,28 @@
 [build-system]
-requires = ["setuptools>=72", "wheel"]
-build-backend = "setuptools.backends.legacy:build"
+requires      = ["setuptools>=72", "wheel"]
+build-backend = "setuptools.build_meta"
 
 [project]
-name = "campusos"
-version = "0.1.0"
-description = "Intelligent campus operating system"
+name        = "campusos"
+version     = "0.1.0"
+description = "Autonomous opportunity-finding agent"
 requires-python = ">=3.10"   # str | None union syntax requires 3.10+
-dependencies = []
+dependencies    = []
 
 [project.optional-dependencies]
 dev = ["pytest>=8"]
 
+[project.scripts]
+campusos-daemon = "campusos.daemon:main"
+campusos-api    = "campusos.api:main"
+campusos-db     = "campusos.db:main"
+campusos-seed   = "campusos.seed:main"
+
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+campusos = ["schema.sql"]   # ship schema so init_db works after a normal install
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]   # lets pytest find campusos without an editable install

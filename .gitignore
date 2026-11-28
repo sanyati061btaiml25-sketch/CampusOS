@@ -1,5 +1,7 @@
-# Secrets – never commit
+# ── Secrets – NEVER commit ────────────────────────────────────────────────────
 .env
+.env.*
+!.env.example
 *.pem
 *.key
 *.p12
@@ -7,13 +9,16 @@
 *_secret*
 *_password*
 
-# Data & SQLite
+# ── Data & SQLite ─────────────────────────────────────────────────────────────
 data/
 *.db
 *.db-wal
 *.db-shm
 
-# Python
+# ── Output (digests, .ics files) ──────────────────────────────────────────────
+outbox/
+
+# ── Python ────────────────────────────────────────────────────────────────────
 __pycache__/
 *.py[cod]
 *.pyo
@@ -26,8 +31,9 @@ build/
 .venv/
 venv/
 env/
+pip-wheel-metadata/
 
-# Testing / tooling
+# ── Testing / tooling ─────────────────────────────────────────────────────────
 .pytest_cache/
 .coverage
 htmlcov/
@@ -35,13 +41,20 @@ htmlcov/
 .ruff_cache/
 .tox/
 
-# Traces
+# ── Traces (LLM call logs) ────────────────────────────────────────────────────
+# Ignore runtime trace files but keep sample traces for judges / reviewers.
 traces/
+!docs/sample_traces/
 
-# IDE
-.vscode/
-.idea/
+# Keep trap-pack results so they can be reviewed
+!tests/trap_pack_results.json
 
-# OS
+# ── Frontend ──────────────────────────────────────────────────────────────────
+node_modules/
 .DS_Store
 Thumbs.db
+
+# ── IDEs ──────────────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.iml
