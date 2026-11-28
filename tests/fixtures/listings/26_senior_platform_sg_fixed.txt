@@ -1,0 +1,12 @@
+About Redwood Telemetry
+Redwood Telemetry builds reliable, human-centered software and analytical platforms used by teams across universities, financial institutions, and distributed engineering organizations. We value clear written communication, careful engineering, and measurable outcomes over buzzwords.
+
+Role Overview: Senior Platform Engineer
+As a Senior Platform Engineer at Redwood Telemetry, you will collaborate with product engineers, data scientists, and operations leads to design, test, and ship production workflows. You will participate in weekly design reviews, write well-documented code and unit tests, monitor service reliability, and help improve internal developer tooling.
+
+Requirements & Qualifications
+Requires 5+ years of experience operating distributed infrastructure; visa sponsorship available. Closing date is 2026-12-27.
+Core skills for this position include Kubernetes, Go, Terraform. Candidates should be comfortable working with version control, structured data, and collaborative code reviews.
+
+How to Apply
+Submit your resume and a short note describing a recent technical or analytical project. We review applications carefully and communicate updates through our official careers portal.

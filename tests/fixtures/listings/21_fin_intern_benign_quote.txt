@@ -1,0 +1,12 @@
+About Marigold FinTech
+Marigold FinTech builds reliable, human-centered software and analytical platforms used by teams across universities, financial institutions, and distributed engineering organizations. We value clear written communication, careful engineering, and measurable outcomes over buzzwords.
+
+Role Overview: Compliance & Fraud Operations Intern
+As a Compliance & Fraud Operations Intern at Marigold FinTech, you will collaborate with product engineers, data scientists, and operations leads to design, test, and ship production workflows. You will participate in weekly design reviews, write well-documented code and unit tests, monitor service reliability, and help improve internal developer tooling.
+
+Requirements & Qualifications
+Our team educates students on spotting scams like 'send bank details for verification' in fake job ads. Apply on or before 2026-12-17.
+Core skills for this position include Excel, Risk Analysis, SQL. Candidates should be comfortable working with version control, structured data, and collaborative code reviews.
+
+How to Apply
+Submit your resume and a short note describing a recent technical or analytical project. We review applications carefully and communicate updates through our official careers portal.

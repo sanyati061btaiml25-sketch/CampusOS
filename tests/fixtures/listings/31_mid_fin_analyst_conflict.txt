@@ -1,0 +1,12 @@
+About Pinnacle Quant
+Pinnacle Quant builds reliable, human-centered software and analytical platforms used by teams across universities, financial institutions, and distributed engineering organizations. We value clear written communication, careful engineering, and measurable outcomes over buzzwords.
+
+Role Overview: Senior Financial Analyst
+As a Senior Financial Analyst at Pinnacle Quant, you will collaborate with product engineers, data scientists, and operations leads to design, test, and ship production workflows. You will participate in weekly design reviews, write well-documented code and unit tests, monitor service reliability, and help improve internal developer tooling.
+
+Requirements & Qualifications
+3+ years of FP&A experience. Listed deadline 2026-12-09 in summary and 2026-12-24 in footer.
+Core skills for this position include Financial Modelling, SQL, Excel. Candidates should be comfortable working with version control, structured data, and collaborative code reviews.
+
+How to Apply
+Submit your resume and a short note describing a recent technical or analytical project. We review applications carefully and communicate updates through our official careers portal.

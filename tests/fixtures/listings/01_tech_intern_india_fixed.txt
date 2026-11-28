@@ -1,0 +1,12 @@
+About Northwind Analytics
+Northwind Analytics builds reliable, human-centered software and analytical platforms used by teams across universities, financial institutions, and distributed engineering organizations. We value clear written communication, careful engineering, and measurable outcomes over buzzwords.
+
+Role Overview: Backend Software Engineer Intern
+As a Backend Software Engineer Intern at Northwind Analytics, you will collaborate with product engineers, data scientists, and operations leads to design, test, and ship production workflows. You will participate in weekly design reviews, write well-documented code and unit tests, monitor service reliability, and help improve internal developer tooling.
+
+Requirements & Qualifications
+Currently enrolled student graduating in 2027 and must be authorised to work in India. Applications close on December 12, 2026.
+Core skills for this position include Python, SQL, Git. Candidates should be comfortable working with version control, structured data, and collaborative code reviews.
+
+How to Apply
+Submit your resume and a short note describing a recent technical or analytical project. We review applications carefully and communicate updates through our official careers portal.
