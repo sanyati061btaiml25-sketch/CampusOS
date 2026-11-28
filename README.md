@@ -73,22 +73,27 @@ campusos/
 │   └── campusos/
 │       ├── __init__.py
 │       ├── env.py               # stdlib .env loader (no third-party deps)
-│       ├── db.py                # connect(), init_db(), __main__
+│       ├── db.py                # connect(), init_db(), resolve_path(), __main__
 │       ├── schema.sql           # SQLite schema: WAL, FK, seed sources & profiles
 │       ├── gateway.py           # HTTP fetch + circuit breaker + host allowlist
 │       ├── runner.py            # run state machine: plan→fetch→parse→upsert→match→done
-│       ├── daemon.py            # scheduler loop, heartbeat, SIGINT/SIGTERM/kill-file
-│       └── api.py               # read-only HTTP API (stdlib, no framework)
+│       ├── daemon.py            # scheduler loop, background heartbeat, SIGINT/SIGTERM
+│       ├── api.py               # JSON HTTP API (stdlib, no framework)
+│       ├── seed.py              # demo DB seeder
+│       ├── sanitize.py          # structural prompt & injection defense (text, HTML, email)
+│       └── readers.py           # resilient readers (HTML, email, JSON, CSV, text)
 │
 ├── tests/
 │   ├── __init__.py
 │   ├── test_db.py               # 7 DB contract tests
-│   └── test_pipeline.py        # 7 gateway / runner / daemon / API tests
+│   ├── test_pipeline.py         # 27 gateway / runner / daemon / API pipeline tests
+│   ├── test_sanitize.py         # HTML, email, zero-width, bidi, and blob defense tests
+│   └── test_readers.py          # lenient JSON, lenient CSV, strict date, fuzz tests
 │
 ├── docs/
 │   ├── AGENT.md                 # architecture: stages, state machine, decisions
 │   ├── SAFETY.md                # safety constraints: no auto-apply, kill switch, budget caps
-│   └── API_current.md           # current read-only API endpoint reference
+│   └── API_current.md           # current API endpoint reference
 │
 ├── traces/                      # LLM call logs (git-ignored)
 └── data/                        # SQLite DB files (git-ignored)
@@ -222,24 +227,12 @@ Every `CREATE` uses `IF NOT EXISTS` and every seed `INSERT` uses `OR IGNORE` —
 python -m pytest tests/ -v
 ```
 
-**14 tests, all green, under 3 s:**
+**All tests pass, isolated via `tmp_path`:**
 
-```
-tests/test_db.py::test_init_db_idempotent              PASSED
-tests/test_db.py::test_foreign_keys_enabled            PASSED
-tests/test_db.py::test_wal_enabled                     PASSED
-tests/test_db.py::test_three_seeded_profiles           PASSED
-tests/test_db.py::test_search_intents_match_profiles   PASSED
-tests/test_db.py::test_eight_enabled_sources           PASSED
-tests/test_db.py::test_foreign_key_enforced            PASSED
-tests/test_pipeline.py::test_gateway_blocks_unlisted_host              PASSED
-tests/test_pipeline.py::test_gateway_circuit_breaker_opens_after_threshold PASSED
-tests/test_pipeline.py::test_gateway_greenhouse_coinbase_fetch         PASSED
-tests/test_pipeline.py::test_runner_greenhouse_coinbase_end_to_end     PASSED
-tests/test_pipeline.py::test_runner_respects_kill_switch               PASSED
-tests/test_pipeline.py::test_daemon_run_once_mock                      PASSED
-tests/test_pipeline.py::test_api_read_endpoints                        PASSED
-```
+- `tests/test_db.py`: 7 DB contract tests (idempotency, FKs, WAL, seed profiles/sources).
+- `tests/test_pipeline.py`: 27 pipeline tests (breaker recovery, replay, kill switch, budget caps, crash guards, daemon heartbeat, API endpoints).
+- `tests/test_sanitize.py`: Structural defenses (hidden elements, white-on-white, offscreen text, comments, zero-width spaces, bidi overrides, encoded blobs, email parsing).
+- `tests/test_readers.py`: Resilient readers (encoding fallback, lenient JSON recovery, lenient CSV validation, strict date validation, and fuzz testing).
 
 Each test spins up a fresh database in `tmp_path` — fully isolated.
 

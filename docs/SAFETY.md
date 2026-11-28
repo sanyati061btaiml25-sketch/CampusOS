@@ -54,6 +54,28 @@ When an enforced cap is hit the run ends with `state='stopped'`, `runs.used_requ
 
 ---
 
+## Sanitizer and Readers (Structural Prompt Defense)
+
+✅ **Working (Modules & Test Suite).**
+- `src/campusos/sanitize.py`:
+  - `strip_invisible()`: Strips zero-width/formatting characters (U+200B..U+200F, U+2060..U+2064, U+FEFF, U+00AD), bidi control characters (U+202A..U+202E, U+2066..U+2069), and unprintable control characters. Normalises with Unicode NFKC.
+  - `sanitize_html()`: Stdlib HTML parser that removes HTML comments, script/style/template/noscript tags, hidden elements (`display:none`, `visibility:hidden`, `opacity:0`, `font-size:0`, zero dimensions with overflow hidden, `text-indent <= -999`, offscreen positioning, and white-on-white text without darker background) configured via inline style attributes OR stylesheet classes and IDs (`.class`, `#id`, `tag`, `tag.class`, comma-separated lists).
+  - Encoded blobs (base64/hex $\ge 40$ characters in attributes or meta content) are reported as `encoded_blob` findings and **never decoded**.
+  - `sanitize_email()`: Parses MIME messages, sanitising HTML bodies and plain text fallbacks, and extracting `.ics`/`.txt`/`.csv` attachments (capped at 100 KB).
+  - All removals are recorded in structured `Finding` objects (`kind`, `detail`, `snippet`). Visible benign text (even quoting injection phrases) produces zero findings and remains intact.
+- `src/campusos/readers.py`:
+  - `decode_bytes()`: UTF-8 strict with graceful fallback to cp1252.
+  - `read_json_lenient()`: Recovers complete records from truncated JSON via `raw_decode` and segregates bad records (duplicate IDs, non-integer or future years) into `records_bad`.
+  - `read_csv_lenient()`: Delimiter sniffing, line-level error segregation (unbalanced quotes, mismatched delimiters, invalid calendar dates, backwards timestamps).
+  - `parse_date_strict()`: Reusable calendar date validation.
+  - `read_any()`: Universal dispatcher by file extension, running `strip_invisible()` on all output text.
+
+📋 **Planned Integration:**
+- The sanitizer and readers are built and thoroughly unit-tested as standalone defensive components. They are **not yet wired into `runner.py`** (which currently handles structured ATS JSON feeds rather than free-form descriptions).
+- The LLM field extractor and the structured output validator remain **planned**.
+
+---
+
 ## Audit Trail
 
 ✅ **Working (DB side).** Every pipeline event is recorded in the `events` table (append-only). The daemon never deletes or updates event rows.
